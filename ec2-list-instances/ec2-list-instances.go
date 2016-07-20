@@ -14,13 +14,21 @@ import (
 
 var (
 	region    = os.Getenv("EC2_REGION")
-	instances = make(map[string]map[string]string)
+	instances []instance
 	out       []byte
 )
 
-// getInstances grabs a list of instances that have a "Name" tag, and optionally
-// accepts a regular expression to filter the results
-// TODO: add option to dump ALL instances regardless of tags.
+type (
+	instance struct {
+		Name             string `json:"name"`
+		PublicIp         string `json:"public-ip"`
+		PrivateIp        string `json:"private-ip"`
+		AvailabilityZone string `json:"zone"`
+	}
+)
+
+// getInstances grabs a list of instances in a particular region and,
+// optionally, accepts a regular expression to filter the results
 func getInstances(region *string, filter string) {
 	// initialise a connection to the EC2 API
 	svc := ec2.New(session.New(), &aws.Config{
@@ -32,34 +40,47 @@ func getInstances(region *string, filter string) {
 	}
 	for r := range resp.Reservations {
 		for _, i := range resp.Reservations[r].Instances {
-			instance := make(map[string]string)
+			inst := instance{}
+
 			// ignore nodes without an IP address
 			if i.PrivateIpAddress == nil {
 				continue
 			}
+
+			hasName := false
+			var nameTag string
+
 			for _, t := range i.Tags {
-				var nametag string
-				// only take nodes with a "Name" tag
 				if *t.Key != "Name" {
 					continue
 				} else {
-					match, _ := regexp.MatchString(filter, *t.Value)
-					if match {
-						nametag = *t.Value
-					} else {
-						continue
-					}
+					hasName = true
+					nameTag = *t.Value
 				}
-				// pump some metadata into our instance map
-				instance["name"] = nametag
-				instance["local-ip"] = *i.PrivateIpAddress
-				if i.PublicIpAddress != nil {
-					instance["public-ip"] = *i.PublicIpAddress
-				}
-				instance["zone"] = *i.Placement.AvailabilityZone
-				// add the instance map into the instances map
-				instances[*i.InstanceId] = instance
+
 			}
+
+			// pump some metadata into our instance map
+			if hasName {
+				match, _ := regexp.MatchString(filter, nameTag)
+				if match {
+					inst.Name = nameTag
+				} else {
+					continue
+				}
+			}
+
+			inst.PrivateIp = *i.PrivateIpAddress
+
+			if i.PublicIpAddress != nil {
+				inst.PublicIp = *i.PublicIpAddress
+			}
+
+			inst.AvailabilityZone = *i.Placement.AvailabilityZone
+
+			// add the instance struct into the instances array
+			instances = append(instances, inst)
+
 		}
 	}
 	// pretty print the result as json
