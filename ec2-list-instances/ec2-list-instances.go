@@ -20,6 +20,7 @@ var (
 
 type (
 	instance struct {
+		Id               string `json:"instance-id"`
 		Name             string `json:"name"`
 		PublicIp         string `json:"public-ip"`
 		PrivateIp        string `json:"private-ip"`
@@ -61,6 +62,8 @@ func getInstances(region *string, filter string) {
 			}
 
 			// pump some metadata into our instance map
+			inst.Id = *i.InstanceId
+
 			if hasName {
 				match, _ := regexp.MatchString(filter, nameTag)
 				if match {
